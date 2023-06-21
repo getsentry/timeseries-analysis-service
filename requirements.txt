@@ -42,6 +42,6 @@ six==1.16.0
 statsmodels==0.12.2
 tqdm==4.62.3
 tsmoothie==1.0.4
-ujson==5.1.0
+ujson==5.4.0
 urllib3==1.26.8
 Werkzeug==2.0.2
