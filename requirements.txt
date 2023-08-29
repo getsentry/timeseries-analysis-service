@@ -22,7 +22,7 @@ korean-lunar-calendar==0.2.1
 LunarCalendar==0.0.9
 MarkupSafe==2.0.1
 matplotlib==3.5.1
-numpy==1.21
+numpy==1.22.0
 packaging==21.3
 pandas==1.4.0
 Pillow==9.0.1
