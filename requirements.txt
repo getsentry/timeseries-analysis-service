@@ -29,7 +29,7 @@ numpy==1.25.2
 packaging==23.1
 pandas==2.0.3
 patsy==0.5.3
-Pillow==10.0.0
+Pillow==10.0.1
 prophet==1.1.4
 PyMeeus==0.5.12
 pyparsing==3.0.9
