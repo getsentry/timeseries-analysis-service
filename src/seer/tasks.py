@@ -13,6 +13,7 @@ import sqlalchemy
 from dateutil.relativedelta import relativedelta
 from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import TransactionTimeoutError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from seer.db import AsyncSession, ProcessRequest
@@ -114,13 +115,17 @@ class AsyncApp:
         await asyncio.gather(self.select_from_db())
 
     async def invoke_task(self, task: AsyncTaskFactory, process_request: ProcessRequest):
-        async with AsyncSession() as session, acquire_x_lock(
-            process_request.name, session
-        ) as acquired:
-            if acquired:
-                await session.execute(text("SET idle_in_transaction_session_timeout = '1h'"))
-                await task.invoke(process_request)
-            return acquired
+        try:
+            async with AsyncSession() as session, acquire_x_lock(
+                process_request.name, session
+            ) as acquired:
+                if acquired:
+                    await session.execute(text("SET idle_in_transaction_session_timeout = '1h'"))
+                    await task.invoke(process_request)
+                return acquired
+        except TransactionTimeoutError:
+            logger.error("Transaction timeout occurred. Failing gracefully.")
+            # Additional logic for failing gracefully can be added here
 
     async def consumer_loop(self):
         while not self.end_event.is_set():
