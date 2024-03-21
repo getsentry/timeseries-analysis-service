@@ -231,25 +231,41 @@ class CodeActionTools(BaseTools):
             file_change,
         )
 
-        return f"success; New file contents for `{file_path}`: \n\n```\n{file_change.apply(document.text)}\n```"
+        return f"success; New file contents for `{file_path}`: 
 
-    # def insert_snippet(
-    #     self, file_path: str, reference_snippet: str, snippet: str, commit_message: str
-    # ):
-    #     """
-    #     Inserts a snippet after the reference snippet.
-    #     """
+```
+{file_change.apply(document.text)}
+```"
 
-    #     logger.debug(
-    #         f"[CodeActionTools.insert_snippet] Inserting snippet {snippet} after {reference_snippet} in {file_path}"
-    #     )
+    def modify_existing_file(self, file_path: str, repo_name: str, snippet: str, commit_message: str):
+        """
+        Modifies an existing file by either appending the new snippet or modifying an existing part of the file.
+        """
+        logger.debug(
+            f"[CodeActionTools.modify_existing_file] Modifying or appending to file {file_path} with snippet {snippet} in {repo_name}"
+        )
 
-    #     file_contents = self._get_latest_file_contents(file_path)
+        codebase, document = self.context.get_document_and_codebase(file_path, repo_name=repo_name)
 
-    #     if not file_contents:
-    #         raise Exception("File not found.")
+        if not document or not codebase:
+            raise FileNotFoundError("File not found or it was deleted in a previous action.")
 
-    #     original_snippet = find_original_snippet(
+        if snippet in document.text:
+            logger.info("Snippet already exists in the file.")
+            return "Snippet already exists. No changes made."
+
+        new_content = f"{document.text}\n{snippet}"
+        self.store_file_change(
+            codebase,
+            FileChange(
+                change_type="edit",
+                path=file_path,
+                new_snippet=new_content,
+                description=commit_message,
+            ),
+        )
+
+        return "success: Snippet added to the file."
     #         reference_snippet, file_contents, threshold=self._snippet_matching_threshold
     #     )
 
