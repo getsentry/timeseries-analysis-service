@@ -15,10 +15,11 @@ logger = logging.getLogger("grouping")
 
 
 class GroupingRequest(BaseModel):
-    group_id: int
     project_id: int
     stacktrace: str
     message: str
+    group_id: int | None = None
+    stacktrace_hash: str | None = None
     k: int = 1
     threshold: float = 0.01
 
@@ -31,10 +32,11 @@ class GroupingRequest(BaseModel):
 
 
 class GroupingRecord(BaseModel):
-    group_id: int
+    group_id: int | None
     project_id: int
     message: str
     stacktrace_embedding: np.ndarray
+    stacktrace_hash: str | None
 
     def to_db_model(self) -> DbGroupingRecord:
         return DbGroupingRecord(
@@ -42,6 +44,7 @@ class GroupingRecord(BaseModel):
             project_id=self.project_id,
             message=self.message,
             stacktrace_embedding=self.stacktrace_embedding,
+            stacktrace_hash=self.stacktrace_hash,
         )
 
     class Config:
@@ -60,6 +63,7 @@ class GroupingResponse(BaseModel):
 
 class SimilarityResponse(BaseModel):
     responses: List[GroupingResponse]
+    token: Optional[int]
 
 
 class GroupingLookup:
@@ -139,8 +143,28 @@ class GroupingLookup:
         :return: A SimilarityResponse object containing a list of GroupingResponse objects with the nearest group IDs,
                  stacktrace similarity scores, message similarity scores, and grouping flags.
         """
-        embedding = self.encode_text(issue.stacktrace).astype("float32")
         with Session() as session:
+            # If an exact match of the stacktrace hash is found, return this record
+            if hasattr(issue, "stacktrace_hash") and issue.stacktrace_hash:
+                existing_record = (
+                    session.query(DbGroupingRecord)
+                    .filter_by(stacktrace_hash=issue.stacktrace_hash)
+                    .first()
+                )
+                if existing_record:
+                    similarity_response = SimilarityResponse(responses=[], token=None)
+                    similarity_response.responses.append(
+                        GroupingResponse(
+                            parent_group_id=existing_record.group_id,
+                            stacktrace_distance=0.00,
+                            message_distance=0.00,
+                            should_group=True,
+                        )
+                    )
+                    return similarity_response
+
+            embedding = self.encode_text(issue.stacktrace).astype("float32")
+
             results = (
                 session.query(
                     DbGroupingRecord,
@@ -152,17 +176,21 @@ class GroupingLookup:
                     DbGroupingRecord.project_id == issue.project_id,
                     DbGroupingRecord.stacktrace_embedding.cosine_distance(embedding) <= 0.15,
                     DbGroupingRecord.group_id != issue.group_id,
+                    DbGroupingRecord.group_id != None,
                 )
                 .order_by("distance")
                 .limit(issue.k)
                 .all()
             )
 
-            self.insert_new_grouping_record(session, issue, embedding)
+            # If no existing groups within the threshold, insert the request as a new GroupingRecord
+            token = None
+            if not any(distance <= issue.threshold for _, distance in results):
+                token = self.insert_new_grouping_record(session, issue, embedding)
 
             session.commit()
 
-        similarity_response = SimilarityResponse(responses=[])
+        similarity_response = SimilarityResponse(responses=[], token=token)
         for record, distance in results:
             message_similarity_score = difflib.SequenceMatcher(
                 None, issue.message, record.message
@@ -180,20 +208,33 @@ class GroupingLookup:
 
         return similarity_response
 
-    def insert_new_grouping_record(self, session, issue: GroupingRequest, embedding: np.ndarray):
+    def insert_new_grouping_record(
+        self, session, issue: GroupingRequest, embedding: np.ndarray
+    ) -> int:
         """
         Inserts a new GroupingRecord into the database if the group_id does not already exist.
+        If new grouping record was created, return the id.
 
         :param session: The database session.
         :param issue: The issue to insert as a new GroupingRecord.
         :param embedding: The embedding of the stacktrace.
         """
-        existing_record = session.query(DbGroupingRecord).filter_by(group_id=issue.group_id).first()
+        existing_record = None
+        if issue.group_id:
+            existing_record = (
+                session.query(DbGroupingRecord).filter_by(group_id=issue.group_id).first()
+            )
+
         if existing_record is None:
             new_record = GroupingRecord(
                 group_id=issue.group_id,
                 project_id=issue.project_id,
                 message=issue.message,
                 stacktrace_embedding=embedding,
+                stacktrace_hash=issue.stacktrace_hash,
             ).to_db_model()
             session.add(new_record)
+            session.commit()
+            return new_record.id
+
+        return existing_record.id
