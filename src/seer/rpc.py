@@ -136,7 +136,8 @@ class SentryRpcClient(RpcClient):
         url_path = f"/api/0/internal/seer-rpc/{method}/"
         endpoint = f"{self.base_url}{url_path}"
         body_dict = {"args": kwargs}
-        body = json_dumps(body_dict, separators=(",", ":"))
+        from seer.utils.json_encoder import CustomJSONEncoder
+        body = json.dumps(body_dict, separators=(',', ':'), cls=CustomJSONEncoder)
         body_bytes = body.encode("utf-8")
         signature = self._generate_request_signature(url_path, body_bytes)
         headers = {
