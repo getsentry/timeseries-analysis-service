@@ -42,6 +42,19 @@ class BreakpointTransaction(BaseModel):
     def validate_ints(cls, v):
         return round(v)
 
+    @validator('data', pre=True, each_item=True)
+    @classmethod
+    def validate_data(cls, v):
+        new_data = []
+        for timestamp, metadata_list in v:
+            if len(metadata_list) > 1:
+                aggregated_count = sum(item['count'] for item in metadata_list)
+                new_metadata = {'count': aggregated_count}
+                new_data.append((timestamp, [new_metadata]))
+            else:
+                new_data.append((timestamp, metadata_list))
+        return new_data
+
 
 class BreakpointRequest(BaseModel):
     data: Mapping[str, BreakpointTransaction]
