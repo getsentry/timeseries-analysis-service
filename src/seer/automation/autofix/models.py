@@ -173,7 +173,17 @@ class EventDetails(BaseModel):
         for entry in error_event.get("entries", []):
             if entry.get("type") == "exception":
                 for exception in entry.get("data", {}).get("values", []):
-                    exceptions.append(ExceptionDetails.model_validate(exception))
+                    if isinstance(exception, str):
+                        try:
+                            exception = json.loads(exception)
+                        except json.JSONDecodeError:
+                            continue
+                    if not isinstance(exception, dict):
+                        continue
+                    try:
+                        exceptions.append(ExceptionDetails.model_validate(exception))
+                    except ValidationError as e:
+                        logger.error(f"Skipped exception due to invalid format: {e}")
 
         return cls(title=error_event.get("title"), exceptions=exceptions)
 
