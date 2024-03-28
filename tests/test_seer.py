@@ -1,4 +1,6 @@
+import datetime
 import json
+import os
 import unittest
 from unittest import mock
 
@@ -7,7 +9,7 @@ from johen.pytest import parametrize
 from sqlalchemy import text
 
 from seer.app import app
-from seer.db import AsyncSession, ProcessRequest, Session
+from seer.db import AsyncSession, DbGroupingRecord, ProcessRequest, Session
 
 
 @pytest.fixture(autouse=True)
@@ -301,6 +303,65 @@ class TestSeer(unittest.TestCase):
 
         output = json.loads(response.get_data(as_text=True))
         assert output == {"data": []}
+
+    def test_similarity_grouping_record_endpoint_valid(self):
+        """Test the similarity grouping record endpoint"""
+        record_requests = {
+            "data": [
+                {
+                    "group_id": i,
+                    "project_id": 1,
+                    "message": "message " + str(i),
+                }
+                for i in range(5)
+            ],
+            "stacktrace_list": ["stacktrace " + str(i) for i in range(5)],
+        }
+
+        response = app.test_client().post(
+            "/v0/issues/similar-issues/grouping-record",
+            data=json.dumps(record_requests),
+            content_type="application/json",
+        )
+        output = json.loads(response.get_data(as_text=True))
+        assert output == {"success": True}
+        for i in range(5):
+            with Session() as session:
+                assert (
+                    session.query(DbGroupingRecord).filter(DbGroupingRecord.group_id == i).first()
+                    is not None
+                )
+
+    def test_similarity_grouping_record_endpoint_valid(self):
+        """
+        Test the similarity grouping record endpoint is unsuccessful when input lists are of
+        different lengths
+        """
+        record_requests = {
+            "data": [
+                {
+                    "group_id": i,
+                    "project_id": 1,
+                    "message": "message " + str(i),
+                }
+                for i in range(2)
+            ],
+            "stacktrace_list": ["stacktrace " + str(i) for i in range(3)],
+        }
+
+        response = app.test_client().post(
+            "/v0/issues/similar-issues/grouping-record",
+            data=json.dumps(record_requests),
+            content_type="application/json",
+        )
+        output = json.loads(response.get_data(as_text=True))
+        assert output == {"success": False}
+        for i in range(2):
+            with Session() as session:
+                assert (
+                    session.query(DbGroupingRecord).filter(DbGroupingRecord.group_id == i).first()
+                    is None
+                )
 
 
 @parametrize(count=1)

@@ -97,6 +97,35 @@
                 "deprecated": false
             }
         },
+        "/v0/issues/similar-issues/grouping-record": {
+            "post": {
+                "tags": [],
+                "operationId": "imilarity_grouping_record_endpoint",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateGroupingRecordsRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BulkCreateGroupingRecordsResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "deprecated": false
+            }
+        },
         "/v0/automation/autofix": {
             "post": {
                 "tags": [],

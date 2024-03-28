@@ -30,6 +30,17 @@ class GroupingRequest(BaseModel):
         return v
 
 
+class CreateGroupingRecordData(BaseModel):
+    group_id: int
+    project_id: int
+    message: str
+
+
+class CreateGroupingRecordsRequest(BaseModel):
+    data: List[CreateGroupingRecordData]
+    stacktrace_list: List[str]
+
+
 class GroupingRecord(BaseModel):
     group_id: int
     project_id: int
@@ -60,6 +71,10 @@ class GroupingResponse(BaseModel):
 
 class SimilarityResponse(BaseModel):
     responses: List[GroupingResponse]
+
+
+class BulkCreateGroupingRecordsResponse(BaseModel):
+    success: bool
 
 
 class GroupingLookup:
@@ -130,6 +145,16 @@ class GroupingLookup:
         """
         return self.model.encode(stacktrace)
 
+    def encode_multiple_texts(self, stacktraces: List[str], batch_size: int = 1000) -> np.ndarray:
+        """
+        Encodes multiple stacktraces in batches using the sentence transformer model.
+
+        :param stacktraces: The list of stacktracse to encode.
+        :param batch_size: The batch size used for the computation.
+        :return: The embeddings of the stacktraces.
+        """
+        return self.model.encode(sentences=stacktraces, batch_size=batch_size)
+
     def get_nearest_neighbors(self, issue: GroupingRequest) -> SimilarityResponse:
         """
         Retrieves the k nearest neighbors for a stacktrace within the same project and determines if they should be grouped.
@@ -180,6 +205,38 @@ class GroupingLookup:
 
         return similarity_response
 
+    def bulk_create_and_insert_grouping_records(
+        self, data: CreateGroupingRecordsRequest
+    ) -> BulkCreateGroupingRecordsResponse:
+        """
+        Calls functions to create grouping records and bulk insert them.
+        """
+        if len(data.data) != len(data.stacktrace_list):
+            return BulkCreateGroupingRecordsResponse(success=False)
+
+        records = self.create_grouping_record_objects(data)
+        self.bulk_insert_new_grouping_records(records)
+        return BulkCreateGroupingRecordsResponse(success=True)
+
+    def create_grouping_record_objects(
+        self, data: CreateGroupingRecordsRequest
+    ) -> List[DbGroupingRecord]:
+        """
+        Creates stacktrace emebddings and record objects for the given data.
+        Returns a list of created records.
+        """
+        records = []
+        embeddings = self.encode_multiple_texts(data.stacktrace_list)
+        for i, entry in enumerate(data.data):
+            new_record = GroupingRecord(
+                group_id=entry.group_id,
+                project_id=entry.project_id,
+                message=entry.message,
+                stacktrace_embedding=embeddings[i].astype("float32"),
+            ).to_db_model()
+            records.append(new_record)
+        return records
+
     def insert_new_grouping_record(self, session, issue: GroupingRequest, embedding: np.ndarray):
         """
         Inserts a new GroupingRecord into the database if the group_id does not already exist.
@@ -197,3 +254,13 @@ class GroupingLookup:
                 stacktrace_embedding=embedding,
             ).to_db_model()
             session.add(new_record)
+
+    def bulk_insert_new_grouping_records(self, records: List[DbGroupingRecord]):
+        """
+        Bulk inserts new GroupingRecord into the database.
+
+        :param records: List of records to be inserted
+        """
+        with Session() as session:
+            session.bulk_save_objects(records)
+            session.commit()
